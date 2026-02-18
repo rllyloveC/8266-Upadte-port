@@ -22,16 +22,28 @@ if "selected_mode" not in st.session_state: st.session_state.selected_mode = "�
 #==========================================================================
 
 
-import os
-current_file_path = os.path.abspath(r"C:\Users\asus0\Desktop\General Offline AI")
-BASE_DIR = os.path.dirname(current_file_path)
-MODEL_DIR = os.path.join(BASE_DIR, "model")
-MODEL_PATHS = {
-    "vision": os.path.join(MODEL_DIR, "vision", "Qwen2-VL-7B-Instruct-Q4_K_S.gguf"),
-    "vision_projector": os.path.join(MODEL_DIR, "vision", "mmproj-Qwen2-VL-7B-Instruct-f32.gguf"),
-    "logic": os.path.join(MODEL_DIR, "logic", "deepseek-r1-distill-qwen-7b-q4_k_m.gguf"),
-    "chat": os.path.join(MODEL_DIR, "chat", "qwen2.5-7b-instruct-q4_k_m.gguf") 
-}
+def resolve_model_paths():
+    env_model_dir = os.environ.get("MODEL_DIR")
+    candidates = []
+
+    if env_model_dir:
+        candidates.append(os.path.abspath(env_model_dir))
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(script_dir, "model"))
+    candidates.append(os.path.join(os.getcwd(), "model"))
+
+    model_dir = next((c for c in candidates if os.path.isdir(c)), candidates[0])
+
+    return {
+        "vision": os.path.join(model_dir, "vision", "Qwen2-VL-7B-Instruct-Q4_K_S.gguf"),
+        "vision_projector": os.path.join(model_dir, "vision", "mmproj-Qwen2-VL-7B-Instruct-f32.gguf"),
+        "logic": os.path.join(model_dir, "logic", "deepseek-r1-distill-qwen-7b-q4_k_m.gguf"),
+        "chat": os.path.join(model_dir, "chat", "qwen2.5-7b-instruct-q4_k_m.gguf")
+    }
+
+
+MODEL_PATHS = resolve_model_paths()
 
 
 
@@ -54,7 +66,7 @@ with st.sidebar:
     )
     mode_to_key = {
         "Qwen2-VL": "vision",
-        "DeepSeek": "logic",
+        "Deepseek": "logic",
         "Qwen2.5": "chat"
     }
     selected_key = mode_to_key[app_mode]
@@ -78,8 +90,8 @@ def get_single_model(model_key):
             if model_key == "vision":
                 from llama_cpp.llama_chat_format import Llava15ChatHandler # Fallback
                 chat_handler = Llava15ChatHandler(
-    clip_model_path=MODEL_PATHS["vision_projector"]
-)
+                    clip_model_path=MODEL_PATHS["vision_projector"]
+                )
                 st.session_state.vision_chat_handler = chat_handler
 
             st.session_state.llm = Llama(
@@ -139,21 +151,27 @@ def get_model(model_key):
         gc.collect()
         st.warning(f"🔄 Switching to {model_key.upper()} Model...")
 
+        if not os.path.exists(path):
+            st.error(f"ไม่พบไฟล์โมเดล {model_key}: {path}")
+            return None
+
         chat_handler = None
 
-
         if model_key == "vision":
+            clip_model_path = MODEL_PATHS["vision_projector"]
+            if not os.path.exists(clip_model_path):
+                st.error(f"ไม่พบไฟล์ vision projector: {clip_model_path}")
+                return None
+
             try:
-                chat_handler = chat_handler = Qwen2VLChatHandler(clip_model_path=MODEL_PATHS["vision_projector"],
-                            verbose=False
-                               )
-                st.session_state.vision_chat_handler = chat_handler
-            except AttributeError:
-                st.error(
-                    "ไม่พบ Qwen2VLChatHandler "
-                    "กรุณาตรวจสอบเวอร์ชัน llama-cpp-python"
+                chat_handler = Qwen2VLChatHandler(
+                    clip_model_path=clip_model_path,
+                    verbose=False
                 )
-                chat_handler = None
+                st.session_state.vision_chat_handler = chat_handler
+            except (AttributeError, ValueError) as e:
+                st.error(f"โหลด Vision Chat Handler ไม่สำเร็จ: {e}")
+                return None
 
         st.session_state.llm = Llama(
             model_path=path,
@@ -163,8 +181,9 @@ def get_model(model_key):
             logits_all=True if model_key == "vision" else False,
             verbose=False
         )
-        return st.session_state.llm
         st.session_state.current_model_path = path
+
+    return st.session_state.get("llm")
 
 
 
@@ -421,7 +440,9 @@ with tab1:
     if best_image_pil:
         if st.button("🚀 Analyze Image", type="primary"):
             llm = get_model("vision")
-            
+            if llm is None:
+                st.stop()
+
             enhancer = ImageEnhance.Contrast(best_image_pil)
             proc_img = enhancer.enhance(1.4)
             
@@ -473,6 +494,9 @@ with tab2:
     
     if st.button("🧠 Start Reasoning", disabled=not problem):
         llm = get_model("logic")
+        if llm is None:
+            st.stop()
+
         base_logic_prompt = SOLVER_PROMPT_SET.get(st.session_state.selected_mode, "You are an expert.")
         
         # ใช้ Chat Format แทน Plain Text เพื่อประสิทธิภาพที่ดีกว่าของ DeepSeek/Qwen
@@ -512,7 +536,9 @@ with tab3:
         is_calc = needs_calculation(p)
         model_type = "logic" if is_calc else "chat"
         llm = get_model(model_type)
-        
+        if llm is None:
+            st.stop()
+
         with st.chat_message("assistant"):
             placeholder = st.empty()
             full_response = ""

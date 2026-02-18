@@ -22,8 +22,7 @@ if "selected_mode" not in st.session_state: st.session_state.selected_mode = "เน
 #==========================================================================
 
 
-import os
-current_file_path = os.path.abspath(r"C:\Users\asus0\Desktop\General Offline AI")
+current_file_path = os.path.abspath(__file__)
 BASE_DIR = os.path.dirname(current_file_path)
 MODEL_DIR = os.path.join(BASE_DIR, "model")
 MODEL_PATHS = {
@@ -54,7 +53,7 @@ with st.sidebar:
     )
     mode_to_key = {
         "Qwen2-VL": "vision",
-        "DeepSeek": "logic",
+        "Deepseek": "logic",
         "Qwen2.5": "chat"
     }
     selected_key = mode_to_key[app_mode]
@@ -78,8 +77,8 @@ def get_single_model(model_key):
             if model_key == "vision":
                 from llama_cpp.llama_chat_format import Llava15ChatHandler # Fallback
                 chat_handler = Llava15ChatHandler(
-    clip_model_path=MODEL_PATHS["vision_projector"]
-)
+                    clip_model_path=MODEL_PATHS["vision_projector"]
+                )
                 st.session_state.vision_chat_handler = chat_handler
 
             st.session_state.llm = Llama(
@@ -163,8 +162,8 @@ def get_model(model_key):
             logits_all=True if model_key == "vision" else False,
             verbose=False
         )
-        return st.session_state.llm
         st.session_state.current_model_path = path
+    return st.session_state.llm
 
 
 
